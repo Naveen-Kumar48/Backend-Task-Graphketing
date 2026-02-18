@@ -35,7 +35,7 @@ A simple REST API for managing tasks with user authentication.
    npm run dev
    ```
 
-## API Endpoints
+
 
 ### Auth
 - `POST /api/auth/register` - Register a new user
