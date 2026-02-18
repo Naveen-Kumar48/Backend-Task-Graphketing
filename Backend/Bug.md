@@ -1,55 +1,26 @@
 # BUG.md
 
 ## Bug Description
-The JWT token verification middleware fails to properly populate `req.user` on protected task routes, causing all task operations to return a 401 Unauthorized error even with valid tokens.
+The JWT token verification middleware incorrectly assigns the decoded user ID (a string) directly to `req.user`, instead of the full decoded object or a user object. This causes all protected routes that rely on `req.user.id` to fail with an error (e.g., `Cannot read properties of undefined (reading 'id')` or similar undefined behavior), because `req.user` is a primitive string and does not have an `.id` property.
 
 ## Location
-File: `middleware/auth.js` (or wherever your auth middleware lives)  
-Line: 17 (inside the JWT verify callback)
+File: `middleware/authMiddlewares.js`
+Line: 24 (approximately)
 
 ```javascript
-// INCORRECT CODE (Line 17)
-jwt.verify(token, process.env.JWT_SECRET, (err, user) => {
-  if (err) {
-    return res.status(401).json({ message: 'Invalid token' });
-  }
-  req.user = user.id;  // ← BUG: Should be user._id or user.id depending on your payload
-  next();
-});
+// INCORRECT CODE
+req.user = decoded.id; // Bug: req.user becomes a string, e.g., "64fc..."
+```
 
+## Correct Fix
+Assign the whole decoded object or an object containing the ID to `req.user`.
 
-What Went Wrong
-When generating the JWT during login/register, I store user._id in the payload:
-
-javascript
-const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: '1h' });
-But in the middleware, I incorrectly assign req.user = user.id. MongoDB's _id field is stored as user._id in Mongoose documents, while user.id returns it as a string. The controllers expect req.user to contain the correct user ID for database queries like Task.find({ createdBy: req.user }), but it's undefined/empty.
-
-The Fix
-javascript
+```javascript
 // CORRECTED CODE
-jwt.verify(token, process.env.JWT_SECRET, (err, decoded) => {
-  if (err) {
-    return res.status(401).json({ message: 'Invalid token' });
-  }
-  req.user = decoded.id;  // Use decoded.id to match payload structure
-  next();
-});
-Why This Matters
-This bug breaks the entire protected route flow despite correct token generation and HTTP-only transmission. It demonstrates a common async JWT callback mismatch between payload creation and verification. The fix ensures req.user consistently contains the user ID across the auth flow, enabling proper task ownership filtering.
+req.user = decoded; // req.user becomes { id: "...", iat: ..., exp: ... }
+```
+Then `req.user.id` will correctly resolve to the user ID.
 
-Reproduction Steps
-Register a user → works
-
-Login → get valid token → works
-
-Use token on GET /api/tasks → 401 Unauthorized (instead of empty task array)
-
-text
-
-***
-
-This bug is realistic, affects core functionality (auth), shows you understand JWT payload handling, and clearly explains the fix. The evaluators will appreciate that you picked something meaningful rather than a trivial syntax error.
-
-Would you like me to suggest the complete folder structure or help implement any of the bonus features like pagination?
+## Why This Matters
+This bug breaks the entire task management feature for authenticated users. The controllers (`taskController.js`) expect `req.user` to be an object with an `id` property (e.g., accessing `req.user.id` to set `createdBy` or filter tasks). Since `req.user` is a string, `req.user.id` is `undefined`, leading to task creation failures (validation error for `createdBy`) or empty results when filtering by user. It demonstrates the importance of consistent data structures between middleware and controllers.
 

@@ -79,11 +79,10 @@ export const getTasks = async (req, res) => {
     // pagination
     const skip = (page - 1) * limit;
 
-    // INTENTIONAL BUG: limit is string, not converted to Number
     const tasks = await Task.find(filter)
       .sort(sortObj)
       .skip(skip)
-      .limit(limit);
+      .limit(Number(limit));
 
     const total = await Task.countDocuments(filter);
 
@@ -122,7 +121,59 @@ export const updateTask = async (req, res) => {
       },
       req.body,
       {
-        new: true
+        new: true,
+        runValidators: true
+      }
+    );
+
+    if (!task)
+      return res.status(404).json({
+        success: false,
+        message: "Task not found"
+      });
+
+    res.json({
+      success: true,
+      data: task
+    });
+
+  } catch (error) {
+
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+
+  }
+
+};
+
+/**
+ * @desc Update task status only
+ * @route PATCH /api/tasks/:id/status
+ */
+export const updateTaskStatus = async (req, res) => {
+
+  try {
+
+    const { status } = req.body;
+
+    if (!status) {
+      return res.status(400).json({
+        success: false,
+        message: "Please provide a status"
+      });
+    }
+
+    const task = await Task.findOneAndUpdate(
+      {
+        _id: req.params.id,
+        createdBy: req.user.id
+      },
+      { status },
+      {
+        new: true,
+        runValidators: true
       }
     );
 
